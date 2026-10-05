@@ -1208,12 +1208,8 @@ function renderHistorico() {
   }
 
   const ult = serie[serie.length - 1];
-  const pri = serie[0];
   const nota = notaAmbito(f.dignidad, ult.anio, f);
   const dist = distribucionTerritorial(f, ult.anio);
-  const delta = (a, b) => (!isFinite(a) || !isFinite(b) || !b) ? ''
-    : `${a >= b ? '+' : ''}${dec((a - b) * 100 / b, 1)} % frente a ${pri.anio}`;
-
   /* El nombre de la candidatura solo existe si el filtro llega al ámbito de
      una sola elección; si no, se muestra únicamente la organización. */
   const hayCandidato = serie.some(s => s.primera && s.primera.candidato);
@@ -1224,8 +1220,6 @@ function renderHistorico() {
   /* Concejales y vocales se eligen por listas: llevan sus propias notas, y el
      año sin candidatos en la base muestra «—» en vez de un cero. */
   const esLista = esDignidadSoloHistorico(f.dignidad);
-  const nPostulantes = postulantesDe(f.dignidad, ult.anio, f.provK, f.cantK, f.parrK);
-  const sinPostulantes = esLista && !nPostulantes;
   const notaLista = esLista ? notaDignidadLista(f, etq) : '';
 
   /* Años en que esta dignidad no existía en la base y se replicó la otra de
@@ -1291,23 +1285,8 @@ function renderHistorico() {
       </div>
     </section>
 
-    <p class="sec-nota" style="margin:0 0 8px">
-      Cómo votó <b>${ambito}</b> en la elección de <b>${etq}</b> de <b>${ult.anio}</b>,
-      la más reciente de la base. Las cuatro cifras son de ese año; para los
-      demás, mira la evolución más abajo.</p>
-    <section class="sec-kpis">
-      ${tarjetaKPI(`Votos válidos ${ult.anio}`, fmtNum(ult.validos),
-                   `${delta(ult.validos, pri.validos)}`, true)}
-      ${tarjetaKPI(`Votos nulos ${ult.anio}`, fmtNum(ult.nulos),
-                   `${fmtPct(ult.pctNulos)} de los votos emitidos`)}
-      ${tarjetaKPI(`Votos en blanco ${ult.anio}`, fmtNum(ult.blancos),
-                   `${fmtPct(ult.pctBlancos)} de los votos emitidos`)}
-      ${tarjetaKPI(esLista ? `Listas ${ult.anio}` : `Candidatos ${ult.anio}`,
-                   sinPostulantes ? '—' : fmtNum(nPostulantes),
-                   sinPostulantes
-                     ? `la base no registra candidaturas en ${ult.anio}`
-                     : textoPostulantes(nPostulantes, esLista, f, ult.anio))}
-    </section>
+    <p class="sec-nota" id="h-kpis-nota" style="margin:0 0 8px"></p>
+    <section class="sec-kpis" id="h-kpis"></section>
 
     <section class="tarjeta sec-cabecera">
       <h2 class="tarjeta-tit">Evolución electoral · ${etq} · ${ambito}</h2>
@@ -1474,6 +1453,7 @@ function renderHistorico() {
   SEC.hayCandidato = hayCandidato;
   SEC.dignidadPintada = f.dignidad;
 
+  pintarTarjetasAnio();
   pintarParticipantes();
   cablearControlesMapa();
   pintarMapaElectoral();
@@ -1487,6 +1467,55 @@ function renderHistorico() {
    entre los votos válidos DE ESE AÑO y DE ESE ámbito territorial, así que
    nunca se mezclan dos elecciones ni dos denominadores.
    ========================================================================== */
+
+/* ============================================================================
+   LAS CUATRO TARJETAS DE ARRIBA
+
+   Son del año elegido en la sección —el mismo del mapa y el de «Participantes
+   por año»—, no de un año fijo: al cambiarlo, cambian con él.
+   ========================================================================== */
+
+function pintarTarjetasAnio() {
+  const caja = document.getElementById('h-kpis');
+  const serie = SEC.serie;
+  if (!caja || !serie || !serie.length) return;
+  const f = SEC.filtros.historico;
+  const etq = HIST.etiquetas[f.dignidad] || f.dignidad;
+  const esLista = esDignidadSoloHistorico(f.dignidad);
+  const anio = anioParticipantes(serie);
+  const s = serie.find(x => x.anio === anio) || serie[serie.length - 1];
+  const pri = serie[0];
+  const esUltimo = s.anio === serie[serie.length - 1].anio;
+
+  /* Comparación con la primera elección de la serie; en esa misma elección no
+     hay nada con qué compararla. */
+  const comparacion = (s.anio === pri.anio) ? 'primera elección de la serie'
+    : (!isFinite(s.validos) || !pri.validos) ? ''
+    : `${s.validos >= pri.validos ? '+' : ''}${dec((s.validos - pri.validos) * 100 / pri.validos, 1)} % frente a ${pri.anio}`;
+
+  const n = postulantesDe(f.dignidad, s.anio, f.provK, f.cantK, f.parrK);
+  const sin = esLista && !n;
+
+  const nota = document.getElementById('h-kpis-nota');
+  if (nota) {
+    nota.innerHTML = `Cómo votó <b>${ambitoTexto(f)}</b> en la elección de
+      <b>${etq}</b> de <b>${s.anio}</b>, ${esUltimo ? 'la más reciente de la base'
+        : 'el año elegido'}. Las cuatro cifras son de ese año; para los demás,
+      mira la evolución más abajo.`;
+  }
+
+  caja.innerHTML = [
+    tarjetaKPI(`Votos válidos ${s.anio}`, fmtNum(s.validos), comparacion, true),
+    tarjetaKPI(`Votos nulos ${s.anio}`, fmtNum(s.nulos),
+               `${fmtPct(s.pctNulos)} de los votos emitidos`),
+    tarjetaKPI(`Votos en blanco ${s.anio}`, fmtNum(s.blancos),
+               `${fmtPct(s.pctBlancos)} de los votos emitidos`),
+    tarjetaKPI(esLista ? `Listas ${s.anio}` : `Candidatos ${s.anio}`,
+               sin ? '—' : fmtNum(n),
+               sin ? `la base no registra candidaturas en ${s.anio}`
+                   : textoPostulantes(n, esLista, f, s.anio))
+  ].join('');
+}
 
 /**
  * Año que muestra la tarjeta: el de la sección (el mismo del mapa).
@@ -1599,6 +1628,7 @@ function pintarParticipantes() {
 function elegirAnioSeccion(anio) {
   if (SEC.mapa.anio === anio) return;
   SEC.mapa.anio = anio;
+  pintarTarjetasAnio();
   pintarParticipantes();
   pintarMapaElectoral();
 }
