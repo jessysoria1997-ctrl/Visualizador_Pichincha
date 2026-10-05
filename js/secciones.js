@@ -20,12 +20,18 @@ const SEC = {
     historico: { dignidad: 'ALCALDES', provK: '', cantK: '', parrK: '' },
     etario: { grupo: 0 }          // vive en Preinscritos; sin año, siempre 2027
   },
-  /* Año y variable del mapa electoral. Viven aquí y solo afectan al mapa:
-     ningún otro gráfico, tarjeta o tabla depende de ellos. */
+  /* Año y variable del mapa electoral.
+     El AÑO es el de toda la sección: lo comparten el mapa y la tarjeta
+     «Participantes por año», así que elegirlo en cualquiera de los dos mueve
+     también el otro. La VARIABLE sigue siendo solo del mapa.
+     Lo demás —tarjetas, evolución, fragmentación, nulos y blancos— compara
+     los cinco años a la vez y no depende de esta elección. */
   mapa: { anio: null, variable: 'pctValidos' },
-  /* Año elegido en «Participantes por año». Igual que el del mapa, solo
-     afecta a esa tarjeta. */
-  anioParticipantes: null,
+  /* Serie y contexto del último render, para repintar al cambiar de año sin
+     recalcularlo todo. */
+  serie: null,
+  hayCandidato: false,
+  dignidadPintada: null,
   mapas: { electoral: null },
   /* Dignidad de cada sección en el último cambio de sección: {pre, hist}. */
   parDignidad: null,
@@ -1459,13 +1465,16 @@ function renderHistorico() {
 `;
 
   graficarHistorico(serie, f.dignidad);
-  pintarParticipantes(serie, f.dignidad, hayCandidato);
-
-  /* El mapa arranca en el último año y conserva después lo que elija el
-     usuario, sin que ningún otro elemento dependa de esa elección. */
+  /* La sección arranca en el último año y conserva después lo que elija el
+     usuario, en el mapa o en la tarjeta de participantes. */
   if (SEC.mapa.anio === null || HIST.anios.indexOf(SEC.mapa.anio) < 0) {
     SEC.mapa.anio = ult.anio;
   }
+  SEC.serie = serie;
+  SEC.hayCandidato = hayCandidato;
+  SEC.dignidadPintada = f.dignidad;
+
+  pintarParticipantes();
   cablearControlesMapa();
   pintarMapaElectoral();
 }
@@ -1479,20 +1488,30 @@ function renderHistorico() {
    nunca se mezclan dos elecciones ni dos denominadores.
    ========================================================================== */
 
-/** Año elegido en la tarjeta, o el último de la serie si no hay uno válido. */
+/**
+ * Año que muestra la tarjeta: el de la sección (el mismo del mapa).
+ *
+ * Si ese año no existe en esta serie —hay dignidades y territorios que no
+ * tienen las cinco elecciones— la tarjeta cae en el último año con datos sin
+ * tocar el año de la sección, para no arrastrar al mapa a un año que el
+ * usuario no pidió.
+ */
 function anioParticipantes(serie) {
-  const hay = serie.some(s => s.anio === SEC.anioParticipantes);
-  if (!hay) SEC.anioParticipantes = serie[serie.length - 1].anio;
-  return SEC.anioParticipantes;
+  return serie.some(s => s.anio === SEC.mapa.anio)
+    ? SEC.mapa.anio : serie[serie.length - 1].anio;
 }
 
 /**
- * Pinta la tabla y el gráfico del año elegido y deja los botones cableados.
- * Se la llama en cada render y cada vez que se pulsa un año.
+ * Pinta la tabla y el gráfico del año de la sección y deja los botones
+ * cableados. Se la llama en cada render, al pulsar un año aquí y al pulsarlo
+ * en el mapa.
  */
-function pintarParticipantes(serie, dignidad, hayCandidato) {
+function pintarParticipantes() {
   const cuerpo = document.getElementById('h-part-cuerpo');
-  if (!cuerpo) return;
+  const serie = SEC.serie;
+  if (!cuerpo || !serie || !serie.length) return;
+  const dignidad = SEC.dignidadPintada;
+  const hayCandidato = SEC.hayCandidato;
   const anio = anioParticipantes(serie);
   const s = serie.find(x => x.anio === anio) || serie[serie.length - 1];
   const orgs = s.organizaciones;          // ya vienen ordenadas de mayor a menor
@@ -1500,10 +1519,7 @@ function pintarParticipantes(serie, dignidad, hayCandidato) {
 
   document.querySelectorAll('#h-anios-part [data-pa]').forEach(b => {
     b.classList.toggle('activo', parseInt(b.dataset.pa, 10) === anio);
-    b.onclick = () => {
-      SEC.anioParticipantes = parseInt(b.dataset.pa, 10);
-      pintarParticipantes(serie, dignidad, hayCandidato);
-    };
+    b.onclick = () => { elegirAnioSeccion(parseInt(b.dataset.pa, 10)); };
   });
 
   cuerpo.innerHTML = orgs.length ? orgs.map((o, i) => `<tr${i === 0 ? ' class="fila-ganador"' : ''}>
@@ -1576,10 +1592,21 @@ function pintarParticipantes(serie, dignidad, hayCandidato) {
   });
 }
 
-/** Los controles del mapa repintan solo el mapa. */
+/**
+ * Cambia el año de la sección y repinta lo que depende de él: el mapa y la
+ * tarjeta de participantes. Da igual desde cuál de los dos se pulse.
+ */
+function elegirAnioSeccion(anio) {
+  if (SEC.mapa.anio === anio) return;
+  SEC.mapa.anio = anio;
+  pintarParticipantes();
+  pintarMapaElectoral();
+}
+
+/** El selector de variable repinta solo el mapa; el de año, los dos. */
 function cablearControlesMapa() {
   document.querySelectorAll('#me-anios [data-a]').forEach(b => {
-    b.onclick = () => { SEC.mapa.anio = parseInt(b.dataset.a, 10); pintarMapaElectoral(); };
+    b.onclick = () => elegirAnioSeccion(parseInt(b.dataset.a, 10));
   });
   document.querySelectorAll('#me-vars [data-v]').forEach(b => {
     b.onclick = () => { SEC.mapa.variable = b.dataset.v; pintarMapaElectoral(); };
